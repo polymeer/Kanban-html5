@@ -4,6 +4,23 @@ function List()
 	this.length = 0;
 }
 
+List.prototype.findById = function(id)
+{
+	var node = this.first;
+	
+	while(node!=null)
+	{
+		if(node.data.id == id)
+		{
+			return node.data;
+		}
+		
+		node = node.next;
+	}
+	
+	return null;
+}
+
 List.prototype.toString = function(){
 	var data = "";
 	

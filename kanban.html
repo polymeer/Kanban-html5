@@ -1,3 +1,4 @@
+
 <html>
 
 <head>
@@ -28,7 +29,7 @@ function Task(name,bucket,category)
 	
 	this.toString = function()
 	{
-		return this.name+"--"+this.bucket+"--"+this.category+"</br>";
+		return this.name+"--"+this.bucket.name+"--"+this.category+"</br>";
 	}
 }
 
@@ -37,6 +38,8 @@ function Bucket(name)
 	this.id = -1;
 	this.name = name;
 	this.sequence = bucketList.length+1;
+	this.wip = 5;  // First bucket is ignored
+	this.tasksCount = 0;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -80,7 +83,8 @@ db.transaction(function (tx)
 		
 		for(i=0;i<len;i++)
 		{
-			var task = addTask(result.rows.item(i).name,result.rows.item(i).bucket,result.rows.item(i).category);
+			var bucket = bucketList.findById(result.rows.item(i).bucket);
+			var task = addTask(result.rows.item(i).name,bucket,result.rows.item(i).category);
 			task.id = result.rows.item(i).id;
 		}
 		refreshUI();
@@ -131,9 +135,9 @@ function addBucket(bucketName)
 }
 
 
-function addTask(taskName,bucketName,taskCategory)
+function addTask(taskName,bucket,taskCategory)
 {
-	var newTask = new Task(taskName,bucketName,taskCategory);
+	var newTask = new Task(taskName,bucket,taskCategory);
 	tksLst.add(newTask);
 	return newTask;
 }
@@ -143,21 +147,21 @@ function addTaskByForm()
 	var buckArr = bucketList.toArray();
 	
 	var taskName = document.taskForm.taskName.value;
-	var bucketName = buckArr[0].name;
+	var bucketId = buckArr[0].id;
 	var categoryValue = document.taskForm.taskCategory.value;
 	
-	addTask(document.taskForm.taskName.value,buckArr[0].name,document.taskForm.taskCategory.value);
+	addTask(document.taskForm.taskName.value,buckArr[0],document.taskForm.taskCategory.value);
 	tksLst.clear();
 	db.transaction(function (tx)
 {
-	tx.executeSql("insert into kanban_tasks(name,bucket,category) values ('"+ taskName +"','"+bucketName+"','"+categoryValue+"')");
+	tx.executeSql("insert into kanban_tasks(name,bucket,category) values ('"+ taskName +"','"+bucketId+"','"+categoryValue+"')");
 	tx.executeSql("select id,name,bucket,category from kanban_tasks",[],function(tx,result){
 		var len = result.rows.length;
 		var i = 0;
 		
 		for(i=0;i<len;i++)
 		{
-			var task = addTask(result.rows.item(i).name,result.rows.item(i).bucket,result.rows.item(i).category);
+			var task = addTask(result.rows.item(i).name,bucketList.findById(result.rows.item(i).bucket),result.rows.item(i).category);
 			task.id = result.rows.item(i).id;
 		}
 		refreshUI();
@@ -186,7 +190,7 @@ for(i=0;i<catArray.length;i++)
 	var bucketClassAttr = document.createAttribute("class");
 	bucketClassAttr.value = "category-heading";
 	bucketHeading.setAttributeNode(bucketClassAttr);
-	bucketHeading.appendChild(document.createTextNode(category.name));
+	bucketHeading.appendChild(document.createTextNode(category.name+"-"+category.wip));
 	cat.appendChild(bucketHeading);
 	var classAttr = document.createAttribute("class");
 	classAttr.value="category";
@@ -206,7 +210,7 @@ var taskArray = tksLst.toArray();
 for(i=0;i<taskArray.length;i++)
 {
 	var task = taskArray[i];
-	var bucketDiv = document.getElementById(task.bucket);
+	var bucketDiv = document.getElementById(task.bucket.name);
 	var taskData = document.createElement("div");
 	var taskDataText = document.createElement("div");
 	var classAttrForText = document.createAttribute("class");
@@ -229,7 +233,7 @@ for(i=0;i<taskArray.length;i++)
 	var proceedLink = document.createElement("a");
 	proceedLink.appendChild(document.createTextNode("-->"));
 	var onClickAttr = document.createAttribute("onclick");
-	onClickAttr.value="proceedToNextBucket(\""+task.name+"\")";
+	onClickAttr.value="proceedToNextBucket(\""+task.id+"\")";
 	proceedLink.setAttributeNode(onClickAttr);
 	var hrefAttr = document.createAttribute("href");
 	hrefAttr.value="#";
@@ -249,7 +253,7 @@ for(i=0;i<taskArray.length;i++)
 	var resetLink = document.createElement("a");
 	resetLink.appendChild(document.createTextNode("Reset"));
 	var onClickAttrReset = document.createAttribute("onclick");
-	onClickAttrReset.value="resetBucket(\""+task.name+"\")";
+	onClickAttrReset.value="resetBucket(\""+task.id+"\")";
 	resetLink.setAttributeNode(onClickAttrReset);
 	var hrefAttrReset = document.createAttribute("href");
 	hrefAttrReset.value="#";
@@ -263,24 +267,24 @@ for(i=0;i<taskArray.length;i++)
 }
 
 
-function proceedToNextBucket(taskName)
+function proceedToNextBucket(id)
 {
 	var taskArray = tksLst.toArray();
 	for(i=0;i<taskArray.length;i++)
 {
 	var task = taskArray[i];
-	if(task.name==taskName)
+	if(task.id==id)
 	{
 		var currentBucket = task.bucket;
 		var buckArr = bucketList.toArray();
 		for(i=0;i<buckArr.length-1;i++)//should not work for last bucket
 		{
-			if(buckArr[i].name == currentBucket)
+			if(buckArr[i] == currentBucket)
 			{
-				task.bucket = buckArr[i+1].name;
+				task.bucket = buckArr[i+1];
 				db.transaction(function (tx)
 {
-	tx.executeSql("update kanban_tasks set bucket = '"+task.bucket+"' where id = "+task.id);
+	tx.executeSql("update kanban_tasks set bucket = '"+task.bucket.id+"' where id = "+task.id);
 	refreshUI();
 }
 );
@@ -298,20 +302,20 @@ function proceedToNextBucket(taskName)
 
 
 
-function resetBucket(taskName)
+function resetBucket(id)
 {
 
 	var taskArray = tksLst.toArray();
 	for(i=0;i<taskArray.length;i++)
 {
 	var task = taskArray[i];
-	if(task.name==taskName)
+	if(task.id==id)
 	{
 		var buckArr = bucketList.toArray();
-		task.bucket = buckArr[0].name;
+		task.bucket = buckArr[0];
 				db.transaction(function (tx)
 {
-	tx.executeSql("update kanban_tasks set bucket = '"+task.bucket+"' where id = "+task.id);
+	tx.executeSql("update kanban_tasks set bucket = '"+task.bucket.id+"' where id = "+task.id);
 	refreshUI();
 }
 );
